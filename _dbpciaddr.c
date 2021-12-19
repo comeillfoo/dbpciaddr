@@ -95,12 +95,9 @@ union command {
   struct param_unknown as_unknown;
 };
 
-static const union command unknown_action = {
-  .dstruct = DS_UNKNOWN,
-  .as_unknown = { .dstruct = DS_UNKNOWN }
-};
+#define UNKNOWN_ACTION ( union command ) { .dstruct = DS_UNKNOWN, .as_unknown = { .dstruct = DS_UNKNOWN } }
 
-static union command common_action = unknown_action;
+static union command common_action = UNKNOWN_ACTION;
 static struct debugfs_blob_wrapper common_wrapper = {0};
 
 static enum dest_struct ds_of( const char raw_type ) {
@@ -160,7 +157,7 @@ static ssize_t read_action( union command* action, const char __user* buffer, si
       read_bytes += read_pci_dev( &( action->as_pci_dev ), buffer, length, ptr_offset );
       break;
     default:
-      *action = unknown_action; 
+      *action = UNKNOWN_ACTION; 
       read_bytes += 0;
       break;
   }
@@ -200,7 +197,7 @@ static void dbfs_create_pci_dev_blob( struct param_pci_dev as_pci_dev, struct de
   u32 device = as_pci_dev.device;
   struct pci_dev* wrapped_object = pci_get_device( vendor, device, NULL );
   printk( KERN_INFO MOD_NAME ": dbfs_create_pci_dev_blob: wrapped_object=%p, vendor=%u, device=%u\n", wrapped_object, vendor, device );
-  common_wrapper.data = &wrapped_object;
+  common_wrapper.data = wrapped_object;
   common_wrapper.size = sizeof( struct pci_dev );
   recent_blob = debugfs_create_blob( "pci_dev", 0444, where, &common_wrapper );
 }
