@@ -98,6 +98,8 @@ static const union command unknown_action = {
 };
 
 static union command common_action = unknown_action;
+static struct debugfs_blob_wrapper common_wrapper = {0};
+
 static enum dest_struct ds_of( const char raw_type ) {
   switch ( raw_type ) {
     case 'a':
@@ -141,6 +143,7 @@ static ssize_t read_pci_dev( struct param_pci_dev* as_pci_dev, const char __user
 
 static ssize_t read_action( union command* action, const char __user* buffer, size_t length, loff_t* ptr_offset, enum dest_struct dstruct ) {
   ssize_t read_bytes = 0;
+  action->dstruct = dstruct;
   switch ( dstruct ) {
     case DS_ADDRESS_SPACE:
       read_bytes += read_address_space( &( action->as_address_space ), buffer, length, ptr_offset );
@@ -165,11 +168,9 @@ static struct address_space get_address_space( const char* filename ) {
 
 static void dbfs_create_address_space_blob( struct param_address_space as_address_space, struct dentry* where ) {
   struct address_space wrapped_object = get_address_space( as_address_space.filename );
-  struct debugfs_blob_wrapper address_space_wrapper = {
-    .data = &wrapped_object,
-    .size = sizeof( struct address_space )
-  }; 
-  recent_blob = debugfs_create_blob( "address_space", 0444, where, &address_space_wrapper );
+  common_wrapper.data = &wrapped_object;
+  common_wrapper.size = sizeof( struct address_space );
+  recent_blob = debugfs_create_blob( "address_space", 0444, where, &common_wrapper );
   kfree( as_address_space.filename );
 }
 
@@ -177,12 +178,10 @@ static void dbfs_create_pci_dev_blob( struct param_pci_dev as_pci_dev, struct de
   u32 vendor = as_pci_dev.vendor;
   u32 device = as_pci_dev.device;
   struct pci_dev* wrapped_object = pci_get_device( vendor, device, NULL );
-  printk( KERN_INFO MOD_NAME "dbfs_create_pci_dev_blob: wrapped_object=%p, vendor=%u, device=%u\n", wrapped_object, vendor, device );
-  struct debugfs_blob_wrapper pci_dev_wrapper = {
-    .data = wrapped_object,
-    .size = sizeof( struct pci_dev )
-  };
-  recent_blob = debugfs_create_blob( "pci_dev", 0444, where, &pci_dev_wrapper );
+  printk( KERN_INFO MOD_NAME ": dbfs_create_pci_dev_blob: wrapped_object=%p, vendor=%u, device=%u\n", wrapped_object, vendor, device );
+  common_wrapper.data = &wrapped_object;
+  common_wrapper.size = sizeof( struct pci_dev );
+  recent_blob = debugfs_create_blob( "pci_dev", 0444, where, &common_wrapper );
 }
 
 static void dbfs_create_blob( union command action, struct dentry* where ) {
@@ -216,6 +215,7 @@ static ssize_t ctrlargs_write( struct file* ptr_file, const char __user* buffer,
   printk( KERN_INFO MOD_NAME ": ctrlargs_write: ptr_file=%p, buffer=\"%s\", length=%zu, offset=%lld, read_bytes=%zu\n", ptr_file, buffer, length, *ptr_offset, read_bytes );
   if ( length != read_bytes ) return -EINVAL;
 
+  printk( KERN_INFO MOD_NAME ": will be created blob for %s\n", ( (dstruct == DS_ADDRESS_SPACE)? "address_space" : "pci_dev" ) );
   dbfs_create_blob( common_action, root_dir );
 
   return length;
