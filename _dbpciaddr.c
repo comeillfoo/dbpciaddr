@@ -165,29 +165,27 @@ static ssize_t read_action( union command* action, const char __user* buffer, si
 }
 
 
-static struct address_space get_address_space( u32 pid, u32 fd ) {
+static struct address_space* get_address_space( u32 pid, u32 fd ) {
   printk( KERN_INFO MOD_NAME ": get_address_space: pid=%u fd=%u\n", pid, fd );
   struct task_struct* ptr_task = get_pid_task( find_get_pid( pid ), PIDTYPE_PID );
   if ( ptr_task == NULL )
-    return ( struct address_space ) {};
+    return NULL;
   
   struct file* ptr_file = ptr_task->files->fd_array[ fd ];
   if ( ptr_file == NULL )
-    return ( struct address_space ) {};
+    return NULL;
   
   struct address_space* result = ptr_file->f_inode->i_mapping;
-  printk( KERN_INFO MOD_NAME ": get_address_space: ptr_file=%p and result=%p\n", ptr_file, result );
-  if ( result == NULL )
-    return ( struct address_space ) {};
-  return *result;
+  printk( KERN_INFO MOD_NAME ": get_address_space: ptr_file=%p, result=%p\n", ptr_file, result );
+  return result;
 }  
 
 static void dbfs_create_address_space_blob( struct param_address_space as_address_space, struct dentry* where ) {
   printk( KERN_INFO MOD_NAME ": dbfs_create_address_space_blob: started creating address blob\n" );
   printk( KERN_INFO MOD_NAME ": dbfs_create_address_space_blob: as_address_space.pid=%u, as_address_space.fd=%u, where=%p\n", as_address_space.pid, as_address_space.fd, where );
-  struct address_space wrapped_object = get_address_space( as_address_space.pid, as_address_space.fd );
+  struct address_space* wrapped_object = get_address_space( as_address_space.pid, as_address_space.fd );
   printk( KERN_INFO MOD_NAME ": dbfs_create_address_space_blob: wrapped_object successfully get\n" );
-  common_wrapper.data = &wrapped_object;
+  common_wrapper.data = wrapped_object;
   common_wrapper.size = sizeof( struct address_space );
   recent_blob = debugfs_create_blob( "address_space", 0444, where, &common_wrapper );
 }
