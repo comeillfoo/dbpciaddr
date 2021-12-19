@@ -2,11 +2,13 @@
 #include <linux/kernel.h> /* essential for KERNEL_INFO */
 
 #include <linux/slab.h> /* essential for kmalloc, kfree */
-#include <linux/fdtable.h> /* essential for files_struct */
+#include <linux/fdtable.h> /* essential for files_struct and iterate_fd */
 #include <linux/pid.h> /* essential for get_task_pid, find_get_pid */
 #include <linux/fs.h> /* essential for file_operations */
 #include <linux/debugfs.h> /* essential for debugfs */
 #include <linux/pci.h> /* essential for pci_get_device */
+#include <linux/sched.h> /* essential for task_struct */
+#include <linux/pid.h> /* essential for get_task_pid, find_get_pid */
 
 MODULE_LICENSE( "GPL" );
 
@@ -72,7 +74,8 @@ enum dest_struct {
 
 struct param_address_space {
   enum dest_struct dstruct;
-  char* filename;
+  u32 pid;
+  u32 fd;
 };
 
 struct param_pci_dev {
@@ -111,19 +114,24 @@ static enum dest_struct ds_of( const char raw_type ) {
   }
 }
 
+static size_t get_length( u32 number ) { return snprintf( NULL, 0, "%u", number ); }
+
 static ssize_t read_address_space( struct param_address_space* as_address_space, const char __user* buffer, size_t length, loff_t* ptr_offset ) {
-  char* filename = kmalloc( sizeof( char ) * length, GFP_KERNEL );
-  int read_bytes = snprintf( filename, length, "%s", buffer );
+  u32 pid = 1;
+  u32 fd  = 0;
+
+  size_t params_count = sscanf( buffer, "%u:%u\n", &pid, &fd );
+  size_t read_bytes = get_length( pid ) + get_length( fd ) + 2;
+  printk( KERN_INFO MOD_NAME ": read_address_space: read %zu parameters [ %u:%u ] contains %zu bytes\n", params_count, pid, fd, read_bytes );
+  if ( params_count < 2 ) read_bytes = 0;
   *ptr_offset += read_bytes;
-  printk( KERN_INFO MOD_NAME ": read_address_space: read [ filename=\"%s\" ] in %d bytes\n", filename, read_bytes );
 
   as_address_space->dstruct = DS_ADDRESS_SPACE;
-  as_address_space->filename = filename;
-
+  as_address_space->pid = pid;
+  as_address_space->fd = fd;
   return read_bytes;
 }
 
-static size_t get_length( u32 number ) { return snprintf( NULL, 0, "%u", number ); }
 
 static ssize_t read_pci_dev( struct param_pci_dev* as_pci_dev, const char __user* buffer, size_t length, loff_t* ptr_offset ) {
   u32 vendor = PCI_ANY_ID;
@@ -159,19 +167,32 @@ static ssize_t read_action( union command* action, const char __user* buffer, si
   return read_bytes;
 }
 
-static struct address_space get_address_space( const char* filename ) {
-  struct file* file = filp_open( filename, O_RDONLY, 0444 );
-  struct address_space result = *(file->f_inode->i_mapping);
-  filp_close( file, NULL );
-  return result;
+
+static struct address_space get_address_space( u32 pid, u32 fd ) {
+  printk( KERN_INFO MOD_NAME ": get_address_space: pid=%u fd=%u\n", pid, fd );
+  struct task_struct* ptr_task = get_pid_task( find_get_pid( pid ), PIDTYPE_PID );
+  if ( ptr_task == NULL )
+    return ( struct address_space ) {};
+  
+  struct file* ptr_file = ptr_task->files->fd_array[ fd ];
+  if ( ptr_file == NULL )
+    return ( struct address_space ) {};
+  
+  struct address_space* result = ptr_file->f_inode->i_mapping;
+  printk( KERN_INFO MOD_NAME ": get_address_space: ptr_file=%p and result=%p\n", ptr_file, result );
+  if ( result == NULL )
+    return ( struct address_space ) {};
+  return *result;
 }  
 
 static void dbfs_create_address_space_blob( struct param_address_space as_address_space, struct dentry* where ) {
-  struct address_space wrapped_object = get_address_space( as_address_space.filename );
+  printk( KERN_INFO MOD_NAME ": dbfs_create_address_space_blob: started creating address blob\n" );
+  printk( KERN_INFO MOD_NAME ": dbfs_create_address_space_blob: as_address_space.pid=%u, as_address_space.fd=%u, where=%p\n", as_address_space.pid, as_address_space.fd, where );
+  struct address_space wrapped_object = get_address_space( as_address_space.pid, as_address_space.fd );
+  printk( KERN_INFO MOD_NAME ": dbfs_create_address_space_blob: wrapped_object successfully get\n" );
   common_wrapper.data = &wrapped_object;
   common_wrapper.size = sizeof( struct address_space );
   recent_blob = debugfs_create_blob( "address_space", 0444, where, &common_wrapper );
-  kfree( as_address_space.filename );
 }
 
 static void dbfs_create_pci_dev_blob( struct param_pci_dev as_pci_dev, struct dentry* where ) {
