@@ -171,7 +171,7 @@ static struct address_space* get_address_space( u32 pid, u32 fd ) {
   if ( ptr_task == NULL )
     return NULL;
   
-  struct file* ptr_file = ptr_task->files->fd_array[ fd ];
+  struct file* ptr_file = ptr_task->files->fdt->fd[ fd ];
   if ( ptr_file == NULL )
     return NULL;
   
