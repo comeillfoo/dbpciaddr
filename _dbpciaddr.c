@@ -9,6 +9,7 @@
 #include <linux/pci.h> /* essential for pci_get_device */
 #include <linux/sched.h> /* essential for task_struct */
 #include <linux/pid.h> /* essential for get_task_pid, find_get_pid */
+#include <linux/mutex.h>
 
 MODULE_LICENSE( "GPL" );
 
@@ -18,12 +19,23 @@ MODULE_LICENSE( "GPL" );
 #define MIN_KERN_BUF_CAP 16
 #define MAX_PATH_LEN 4096
 
+static DEFINE_MUTEX( ctrlargs_mutex );
+
 static struct dentry* root_dir = NULL;
 static struct dentry* ctrlargs = NULL;
 static struct dentry* recent_blob = NULL;
 
-static int ctrlargs_open( struct inode* ptr_inode, struct file* ptr_file ) { return 0; }
-static int ctrlargs_release( struct inode* ptr_inode, struct file* ptr_file ) { return 0; }
+static int ctrlargs_open( struct inode* ptr_inode, struct file* ptr_file ) {
+  if ( !mutex_trylock( &ctrlargs_mutex ) ) {
+    printk( KERN_ALERT MOD_NAME ": ctrlargs_open: lock not captured\n" );
+    return -EBUSY;
+  }
+  return 0;
+}
+static int ctrlargs_release( struct inode* ptr_inode, struct file* ptr_file ) {
+  mutex_unlock( &ctrlargs_mutex );
+  return 0;
+}
 
 static ssize_t ctrlargs_read( struct file* ptr_file, char __user* buffer, size_t length, loff_t* ptr_offset );
 static ssize_t ctrlargs_write( struct file* ptr_file, const char __user* buffer, size_t length, loff_t* ptr_offset );
@@ -47,6 +59,7 @@ static int __init init_dbpciaddr( void ) {
 
 static void __exit cleanup_dbpciaddr( void ) {
     printk( KERN_INFO MOD_NAME ": cleanup_" MOD_NAME ": module unloaded\n" );
+    mutex_destroy( &ctrlargs_mutex );
     debugfs_remove_recursive( root_dir );
 }
 
